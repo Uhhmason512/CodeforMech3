@@ -1,7 +1,3 @@
-#include <BLEDevice.h>
-#include <BLEServer.h>
-#include <BLEUtils.h>
-#include <BLE2902.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #include <ezButton.h>
@@ -28,10 +24,7 @@ const int limitSwitchPin = 11; // Limit switch pin for pH assembly
 const int encoderAPin = 12;    // Encoder A signal
 const int encoderBPin = 13;    // Encoder B signal
 
-#define ESP_RX 17 // ESP32 RX pin connected to Arduino TX
-#define ESP_TX 16 // ESP32 TX pin connected to Arduino RX
-
-HardwareSerial SerialFromArduino(1); // UART1 for serial communication
+const int methaneSensorPin = A2; // MP-4 sensor output connected to analog pin A2
 
 // =========================== VARIABLES ===========================
 int lastClkState;
@@ -68,15 +61,8 @@ int runTimesConstraintMin = 1;
 int runTimesConstraintMax = 15;  
 bool resetPhRunInterval = true;
 
-const int methaneSensorPin = A2; // MP-4 sensor output connected to analog pin A2
 const float methaneThresholdVoltage = 2.0; // Threshold voltage to detect methane
 bool methaneDetected = false; // Boolean to track methane detection status
-
-
-// BLE Variables
-BLEServer *pServer = NULL;
-BLECharacteristic *pCharacteristic = NULL;
-bool deviceConnected = false;
 
 const unsigned long dataSendInterval = 1800000; // 30 minutes
 unsigned long lastDataSendTime = 0;
@@ -84,19 +70,6 @@ unsigned long lastDataSendTime = 0;
 // =========================== FUNCTION PROTOTYPES ===========================
 String getDataPage();
 void sendDataToBLE(String data);
-
-// =========================== BLE CALLBACKS ===========================
-class MyServerCallbacks : public BLEServerCallbacks {
-    void onConnect(BLEServer *pServer) {
-        deviceConnected = true;
-        Serial.println("Device connected");
-    }
-
-    void onDisconnect(BLEServer *pServer) {
-        deviceConnected = false;
-        Serial.println("Device disconnected");
-    }
-};
 
 
 // =========================== SETUP FUNCTION ===========================
@@ -125,26 +98,7 @@ void setup() {
     updatePHRunInterval();
     Serial.begin(9600);
 
-    // UART Communication Setup
-    SerialFromArduino.begin(9600, SERIAL_8N1, ESP_RX, ESP_TX);
-    Serial.println("UART communication setup complete");
 
-    // Initialize BLE
-    BLEDevice::init("ESP32 BLE Server");
-    pServer = BLEDevice::createServer();
-    pServer->setCallbacks(new MyServerCallbacks());
-
-    BLEService *pService = pServer->createService(BLEUUID("12345678-1234-1234-1234-123456789012"));
-    pCharacteristic = pService->createCharacteristic(
-        BLEUUID("87654321-4321-4321-4321-210987654321"),
-        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
-    );
-    pCharacteristic->addDescriptor(new BLE2902());
-    pService->start();
-
-    BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
-    pAdvertising->start();
-    Serial.println("Waiting for a client to connect...");
 }
 
 
@@ -169,7 +123,7 @@ void loop() {
     if (currentMillis - lastDataSendTime >= dataSendInterval) {
         lastDataSendTime = currentMillis;
         String dataPage = getDataPage();
-        sendDataToBLE(dataPage);
+        Serial.println(dataPage);
     }
 
 
@@ -235,14 +189,6 @@ String getDataPage() {
 }
 
 
-void sendDataToBLE(String data) {
-    if (deviceConnected) {
-        pCharacteristic->setValue(data.c_str());
-        pCharacteristic->notify();
-        Serial.println("Sent to BLE: " + data);
-    }
-}
-
 
 // ======================= RPM CALCULATION =======================
 void readEncoder() {
@@ -261,10 +207,6 @@ void controlMotorRPM() {
         int pwmValue = constrain(rpmError * 2, 0, 255);
         analogWrite(motorControlPin, pwmValue);
 
-        Serial.print("Measured RPM: ");
-        Serial.println(actualMotorRPM);
-        Serial.print("PWM Value: ");
-        Serial.println(pwmValue);
     }
 }
 
